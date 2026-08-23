@@ -2,6 +2,7 @@ import base64
 import hashlib
 import requests
 import streamlit as st
+import wandb
 
 st.set_page_config(page_title="Agente ML — Mercado Livre", layout="wide")
 
@@ -18,6 +19,16 @@ def has_all_required_secrets():
     return all(get_secret(k) for k in required)
 
 class Agent:
+    def __init__(self):
+        # Inicializa o Wandb se a chave estiver presente
+        wandb_key = get_secret("wandb_api_key")
+        if wandb_key and not wandb.run:
+            try:
+                wandb.login(key=wandb_key)
+                wandb.init(project="agente-mercado-livre", reinit=True, mode="online")
+            except Exception as e:
+                print(f"Erro ao inicializar Wandb: {e}")
+
     def get_auth_url(self):
         client_id = get_secret("ml_client_id")
         redirect_uri = get_secret("OAUTH_REDIRECT_URI")
@@ -67,34 +78,58 @@ class Agent:
         user_id = get_secret("ml_user_id")
         groq_api_key = get_secret("groq_api_key")
         
-        ml_context = ""
-        if any(w in prompt.lower() for w in ["venda", "pedido", "faturamento", "conta", "desempenho"]):
-            headers_ml = {"Authorization": f"Bearer {access_token}"}
-            res = requests.get(f"https://api.mercadolibre.com/orders/search?seller={user_id}", headers=headers_ml)
-            if res.status_code == 200:
-                ml_context = f"Dados brutos da API do Mercado Livre: {res.text[:1500]}"
-            else:
-                ml_context = f"Erro API ML: {res.text}"
+        headers_ml = {"Authorization": f"Bearer {access_token}"}
+        
+        user_info = {}
+        res_user = requests.get("https://api.mercadolibre.com/users/me", headers=headers_ml)
+        if res_user.status_code == 200:
+            user_info = res_user.json()
+
+        items_data = {}
+        res_items = requests.get(f"https://api.mercadolibre.com/users/{user_id}/items/search", headers=headers_ml)
+        if res_items.status_code == 200:
+            items_data = res_items.json()
+
+        orders_data = {}
+        res_orders = requests.get(f"https://api.mercadolibre.com/orders/search?seller={user_id}", headers=headers_ml)
+        if res_orders.status_code == 200:
+            orders_data = res_orders.json()
+
+        ml_context = f"""
+        [DADOS REAIS DA CONTA DO MERCADO LIVRE]
+        - Informações da Conta: {user_info}
+        - IDs dos Anúncios/Itens: {items_data}
+        - Pedidos/Vendas: {orders_data}
+        """
 
         headers_groq = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
         messages = [
             {"role": "system", "content": "Você é um agente de IA especialista em e-commerce e Mercado Livre."},
+            {"role": "system", "content": ml_context},
+            {"role": "user", "content": prompt}
         ]
-        if ml_context:
-            messages.append({"role": "system", "content": ml_context})
-        messages.append({"role": "user", "content": prompt})
 
         payload = {"model": "openai/gpt-oss-120b", "messages": messages, "temperature": 0.7}
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers_groq)
         
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
+            answer = response.json()["choices"][0]["message"]["content"]
+            
+            # Loga a interação no Weights & Biases
+            if wandb.run:
+                wandb.log({
+                    "prompt": prompt,
+                    "response": answer,
+                    "user_id": user_id
+                })
+                
+            return answer
         else:
             return f"Erro na API do Groq: {response.text}"
 
 def render_dashboard(agent: Agent):
     st.title("🤖 Agente IA — Mercado Livre")
-    st.success("Conectado ao Mercado Livre e Groq com sucesso!")
+    st.success("Conectado ao Mercado Livre, Groq e Wandb!")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -109,7 +144,7 @@ def render_dashboard(agent: Agent):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Pensando..."):
+            with st.spinner("Processando e registrando no Wandb..."):
                 response = agent.run_agent(prompt)
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
