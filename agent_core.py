@@ -3,7 +3,7 @@ import hashlib
 import os
 import requests
 
-from config.settings import get_secret, set_secret
+from settings import get_secret, set_secret
 
 def generate_pkce_pair():
     verifier_bytes = os.urandom(32)
