@@ -84,7 +84,7 @@ class Agent:
             messages.append({"role": "system", "content": ml_context})
         messages.append({"role": "user", "content": prompt})
 
-        payload = {"model": "llama-3.3-70b-versatile", "messages": messages, "temperature": 0.7}
+        payload = {"model": "openai/gpt-oss-120b", "messages": messages, "temperature": 0.7}
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers_groq)
         
         if response.status_code == 200:
