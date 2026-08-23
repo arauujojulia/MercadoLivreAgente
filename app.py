@@ -5,10 +5,8 @@ from pathlib import Path
 
 import streamlit as st
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from config.settings import CREDENTIALS, get_secret, has_all_required_secrets, set_secret
-from core.agent_core import Agent 
+from settings import CREDENTIALS, get_secret, has_all_required_secrets, set_secret
+from agent_core import Agent
 
 st.set_page_config(page_title="Agente ML — Mercado Livre", layout="wide")
 
