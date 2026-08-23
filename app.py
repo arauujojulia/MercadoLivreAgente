@@ -1,5 +1,3 @@
-import base64
-import hashlib
 import os
 import requests
 import streamlit as st
@@ -19,29 +17,17 @@ def has_all_required_secrets():
     required = ["ml_client_id", "ml_client_secret", "OAUTH_REDIRECT_URI"]
     return all(get_secret(k) for k in required)
 
-# --- LÓGICA DO AGENTE (AUTENTICAÇÃO) ---
-def generate_pkce_pair():
-    verifier_bytes = os.urandom(32)
-    code_verifier = base64.urlsafe_b64encode(verifier_bytes).rstrip(b'=').decode('utf-8')
-    challenge_bytes = hashlib.sha256(code_verifier.encode('utf-8')).digest()
-    code_challenge = base64.urlsafe_b64encode(challenge_bytes).rstrip(b'=').decode('utf-8')
-    return code_verifier, code_challenge
-
+# --- LÓGICA DO AGENTE (AUTENTICAÇÃO PADRÃO) ---
 class Agent:
     def get_auth_url(self):
         client_id = get_secret("ml_client_id")
         redirect_uri = get_secret("OAUTH_REDIRECT_URI")
         
-        code_verifier, code_challenge = generate_pkce_pair()
-        set_secret("pkce_verifier", code_verifier) 
-
         auth_url = (
             f"https://auth.mercadolivre.com.br/authorization"
             f"?response_type=code"
             f"&client_id={client_id}"
             f"&redirect_uri={redirect_uri}"
-            f"&code_challenge={code_challenge}"
-            f"&code_challenge_method=S256"
         )
         return auth_url
 
@@ -49,15 +35,13 @@ class Agent:
         client_id = get_secret("ml_client_id")
         client_secret = get_secret("ml_client_secret")
         redirect_uri = get_secret("OAUTH_REDIRECT_URI")
-        code_verifier = get_secret("pkce_verifier")
 
         payload = {
             "grant_type": "authorization_code",
             "client_id": client_id,
             "client_secret": client_secret,
             "code": code,
-            "redirect_uri": redirect_uri,
-            "code_verifier": code_verifier
+            "redirect_uri": redirect_uri
         }
         
         headers = {
