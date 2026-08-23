@@ -14,7 +14,7 @@ def set_secret(key, value):
     st.session_state[key] = value
 
 def has_all_required_secrets():
-    required = ["ml_client_id", "ml_client_secret", "OAUTH_REDIRECT_URI", "GROQ_API_KEY"]
+    required = ["ml_client_id", "ml_client_secret", "OAUTH_REDIRECT_URI", "groq_api_key"]
     return all(get_secret(k) for k in required)
 
 class Agent:
@@ -25,7 +25,6 @@ class Agent:
         code_verifier = "mercadolivre_agente_v1_secure_verifier"
         challenge_bytes = hashlib.sha256(code_verifier.encode('utf-8')).digest()
         code_challenge = base64.urlsafe_b64encode(challenge_bytes).rstrip(b'=').decode('utf-8')
-        
         set_secret("pkce_verifier", code_verifier)
 
         return (
@@ -52,11 +51,7 @@ class Agent:
             "code_verifier": code_verifier
         }
         
-        headers = {
-            "accept": "application/json",
-            "content-type": "application/x-www-form-urlencoded"
-        }
-        
+        headers = {"accept": "application/json", "content-type": "application/x-www-form-urlencoded"}
         response = requests.post("https://api.mercadolibre.com/oauth/token", data=payload, headers=headers)
         
         if response.status_code == 200:
@@ -70,43 +65,26 @@ class Agent:
     def run_agent(self, prompt: str) -> str:
         access_token = get_secret("ml_access_token")
         user_id = get_secret("ml_user_id")
-        groq_api_key = get_secret("GROQ_API_KEY")
+        groq_api_key = get_secret("groq_api_key")
         
-        # Coleta dados do Mercado Livre se a pergunta envolver vendas/pedidos
         ml_context = ""
         if any(w in prompt.lower() for w in ["venda", "pedido", "faturamento", "conta", "desempenho"]):
             headers_ml = {"Authorization": f"Bearer {access_token}"}
-            url = f"https://api.mercadolibre.com/orders/search?seller={user_id}"
-            res = requests.get(url, headers=headers_ml)
+            res = requests.get(f"https://api.mercadolibre.com/orders/search?seller={user_id}", headers=headers_ml)
             if res.status_code == 200:
                 ml_context = f"Dados brutos da API do Mercado Livre: {res.text[:1500]}"
             else:
-                ml_context = f"Não foi possível buscar dados da API do ML: {res.text}"
+                ml_context = f"Erro API ML: {res.text}"
 
-        # Configura a requisição para a API do Groq
-        headers_groq = {
-            "Authorization": f"Bearer {groq_api_key}",
-            "Content-Type": "application/json"
-        }
-        
+        headers_groq = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
         messages = [
-            {
-                "role": "system", 
-                "content": "Você é um agente de IA especialista em e-commerce, análise de dados e otimização de vendas para vendedores do Mercado Livre. Forneça insights estratégicos e práticos com base nos dados fornecidos."
-            }
+            {"role": "system", "content": "Você é um agente de IA especialista em e-commerce e Mercado Livre."},
         ]
-        
         if ml_context:
             messages.append({"role": "system", "content": ml_context})
-            
         messages.append({"role": "user", "content": prompt})
 
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": messages,
-            "temperature": 0.7
-        }
-
+        payload = {"model": "llama-3.3-70b-versatile", "messages": messages, "temperature": 0.7}
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers_groq)
         
         if response.status_code == 200:
@@ -125,13 +103,13 @@ def render_dashboard(agent: Agent):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    if prompt := st.chat_input("Peça uma análise ou faça uma pergunta sobre sua loja..."):
+    if prompt := st.chat_input("Faça uma pergunta sobre sua loja..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Gerando insights com IA..."):
+            with st.spinner("Pensando..."):
                 response = agent.run_agent(prompt)
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
@@ -139,8 +117,7 @@ def render_dashboard(agent: Agent):
 def main():
     if not has_all_required_secrets():
         st.title("Configuração de Credenciais")
-        st.warning("Configure todas as chaves (incluindo GROQ_API_KEY) nas Secrets do Streamlit.")
-        st.code('ml_client_id = "..."\nml_client_secret = "..."\nOAUTH_REDIRECT_URI = "..."\nGROQ_API_KEY = "gsk_..."', language='toml')
+        st.error("Faltam variáveis nas Secrets do Streamlit.")
         return
 
     agent = Agent()
