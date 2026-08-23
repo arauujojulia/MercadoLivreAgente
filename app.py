@@ -2,7 +2,12 @@ import base64
 import hashlib
 import requests
 import streamlit as st
-import wandb
+
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
 
 st.set_page_config(page_title="Agente ML — Mercado Livre", layout="wide")
 
@@ -20,14 +25,14 @@ def has_all_required_secrets():
 
 class Agent:
     def __init__(self):
-        # Inicializa o Wandb se a chave estiver presente
-        wandb_key = get_secret("wandb_api_key")
-        if wandb_key and not wandb.run:
-            try:
-                wandb.login(key=wandb_key)
-                wandb.init(project="agente-mercado-livre", reinit=True, mode="online")
-            except Exception as e:
-                print(f"Erro ao inicializar Wandb: {e}")
+        if WANDB_AVAILABLE:
+            wandb_key = get_secret("wandb_api_key")
+            if wandb_key and not wandb.run:
+                try:
+                    wandb.login(key=wandb_key)
+                    wandb.init(project="agente-mercado-livre", reinit=True, mode="online")
+                except Exception:
+                    pass
 
     def get_auth_url(self):
         client_id = get_secret("ml_client_id")
@@ -115,13 +120,8 @@ class Agent:
         if response.status_code == 200:
             answer = response.json()["choices"][0]["message"]["content"]
             
-            # Loga a interação no Weights & Biases
-            if wandb.run:
-                wandb.log({
-                    "prompt": prompt,
-                    "response": answer,
-                    "user_id": user_id
-                })
+            if WANDB_AVAILABLE and wandb.run:
+                wandb.log({"prompt": prompt, "response": answer, "user_id": user_id})
                 
             return answer
         else:
@@ -129,7 +129,7 @@ class Agent:
 
 def render_dashboard(agent: Agent):
     st.title("🤖 Agente IA — Mercado Livre")
-    st.success("Conectado ao Mercado Livre, Groq e Wandb!")
+    st.success("Conectado com sucesso!")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -144,7 +144,7 @@ def render_dashboard(agent: Agent):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Processando e registrando no Wandb..."):
+            with st.spinner("Processando..."):
                 response = agent.run_agent(prompt)
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
