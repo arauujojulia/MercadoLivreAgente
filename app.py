@@ -21,7 +21,6 @@ class Agent:
         client_id = get_secret("ml_client_id")
         redirect_uri = get_secret("OAUTH_REDIRECT_URI")
         
-        # Verificador determinístico para persistir entre o redirect do mobile
         code_verifier = "mercadolivre_agente_v1_secure_verifier"
         challenge_bytes = hashlib.sha256(code_verifier.encode('utf-8')).digest()
         code_challenge = base64.urlsafe_b64encode(challenge_bytes).rstrip(b'=').decode('utf-8')
@@ -41,8 +40,6 @@ class Agent:
         client_id = get_secret("ml_client_id")
         client_secret = get_secret("ml_client_secret")
         redirect_uri = get_secret("OAUTH_REDIRECT_URI")
-        
-        # Recupera da sessão ou usa o fallback garantido
         code_verifier = get_secret("pkce_verifier") or "mercadolivre_agente_v1_secure_verifier"
 
         payload = {
@@ -69,6 +66,32 @@ class Agent:
         else:
             raise Exception(f"Erro na API do ML: {response.text}")
 
+    def run_agent(self, prompt: str) -> str:
+        user_id = get_secret("ml_user_id")
+        return f"Mensagem recebida: '{prompt}'. Estou conectado à conta ID {user_id} e pronto para buscar os dados!"
+
+def render_dashboard(agent: Agent):
+    st.title("🤖 Agente IA — Mercado Livre")
+    st.success("Autenticado com sucesso! O token está ativo.")
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    if prompt := st.chat_input("O que você quer consultar na sua conta?"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Pensando..."):
+                response = agent.run_agent(prompt)
+                st.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+
 def main():
     if not has_all_required_secrets():
         st.title("Configuração de Credenciais")
@@ -94,8 +117,8 @@ def main():
         auth_url = agent.get_auth_url()
         st.link_button("Conectar conta ML", auth_url, type="primary")
     else:
-        st.title("Painel da Loja")
-        st.success("Autenticado com sucesso! O token está ativo.")
+        st.session_state["logged_in"] = True
+        render_dashboard(agent)
 
 if __name__ == "__main__":
     main()
